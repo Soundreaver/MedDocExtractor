@@ -194,11 +194,11 @@ export default function MedicalDocumentExtractorPage() {
       <div className="container mx-auto p-4 sm:p-6 lg:p-8 max-w-4xl">
         <header className="text-center mb-8">
           <h1 className="text-3xl sm:text-4xl font-bold text-gray-900">
-            Medical Document Extractor (Next.js)
+            Medical Document Extractor
           </h1>
-          <p className="mt-2 text-md text-gray-600">
+          {/* <p className="mt-2 text-md text-gray-600">
             Upload a medical report to extract structured data using Google AI.
-          </p>
+          </p> */}
         </header>
 
         <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-200">
