@@ -196,9 +196,9 @@ export default function MedicalDocumentExtractorPage() {
           <h1 className="text-3xl sm:text-4xl font-bold text-gray-900">
             Medical Document Extractor
           </h1>
-          {/* <p className="mt-2 text-md text-gray-600">
+          <p className="mt-2 text-md text-gray-600">
             Upload a medical report to extract structured data using Google AI.
-          </p> */}
+          </p>
         </header>
 
         <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-200">
@@ -226,9 +226,13 @@ export default function MedicalDocumentExtractorPage() {
                 rel="noopener noreferrer"
                 className="text-indigo-600 hover:underline"
               >
-                Google AI Studio
+                Google AI Studio.
               </a>
-              .
+              <br />
+              You also need to have the Cloud Vision API enabled in your Google
+              Cloud project. If you haven't done this, go to the Cloud Vision
+              API page in the Google Cloud Console and click "Enable". The same
+              project should be associated with your API key. .
             </p>
           </div>
 
