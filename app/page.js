@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
+import Image from "next/image";
 
 // This is the main component for your page.
 export default function MedicalDocumentExtractorPage() {
@@ -230,8 +231,8 @@ export default function MedicalDocumentExtractorPage() {
               </a>
               <br />
               You also need to have the Cloud Vision API enabled in your Google
-              Cloud project. If you haven't done this, go to the Cloud Vision
-              API page in the Google Cloud Console and click "Enable". The same
+              Cloud project. If you haven&apos;t done this, go to the Cloud Vision
+              API page in the Google Cloud Console and click &quot;Enable&quot;. The same
               project should be associated with your API key. .
             </p>
           </div>
@@ -289,8 +290,10 @@ export default function MedicalDocumentExtractorPage() {
               <p className="block text-sm font-medium text-gray-700 mb-2">
                 Image Preview:
               </p>
-              <img
+              <Image
                 src={previewUrl}
+                width={500}
+                height={500}
                 className="max-w-full max-h-64 mx-auto rounded-lg shadow-md"
                 alt="Image preview"
               />
