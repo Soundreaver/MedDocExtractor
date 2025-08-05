@@ -52,18 +52,17 @@ export default function MedicalDocumentExtractorPage() {
     setRawText("");
     setStructuredData(null);
     setIsLoading(true);
+    setStatusMessage("Processing document...");
 
     try {
       const base64Content = await toBase64(file);
+      const mimeType = file.type;
 
-      // Step 1: Call Vision API for OCR
-      setStatusMessage("Step 1/2: Extracting text with Vision API...");
-      const detectedText = await detectTextWithVisionAPI(base64Content);
-      setRawText(detectedText);
+      // Call Gemini with the image and prompt
+      const { extractedText, extractedData } =
+        await extractMedicalDataWithGemini(base64Content, mimeType);
 
-      // Step 2: Call Gemini API for data extraction
-      setStatusMessage("Step 2/2: Structuring data with Gemini API...");
-      const extractedData = await extractMedicalDataWithGemini(detectedText);
+      setRawText(extractedText);
       setStructuredData(extractedData);
     } catch (error) {
       console.error("Error during processing:", error);
@@ -76,101 +75,79 @@ export default function MedicalDocumentExtractorPage() {
   };
 
   /**
-   * Calls the Google Cloud Vision API to perform OCR on an image.
+   * Calls the Gemini API to perform OCR and extract structured data from an image.
+   * This function now handles both handwriting recognition and data structuring.
    * @param {string} imageBase64Content The base64 encoded image data.
-   * @returns {Promise<string>} The extracted text.
+   * @param {string} mimeType The MIME type of the image (e.g., 'image/jpeg').
+   * @returns {Promise<{extractedText: string, extractedData: Object}>} The extracted text and structured data.
    */
-  async function detectTextWithVisionAPI(imageBase64Content) {
-    const API_URL = `https://vision.googleapis.com/v1/images:annotate?key=${apiKey}`;
-
-    const requestBody = {
-      requests: [
-        {
-          image: { content: imageBase64Content },
-          features: [{ type: "DOCUMENT_TEXT_DETECTION" }],
-        },
-      ],
-    };
-
-    const response = await fetch(API_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(requestBody),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(
-        `Vision API error: ${errorData.error?.message || "Unknown error"}`
-      );
-    }
-
-    const data = await response.json();
-    const textAnnotations = data.responses[0]?.textAnnotations;
-
-    if (!textAnnotations || textAnnotations.length === 0) {
-      throw new Error("No text found in the document by Vision API.");
-    }
-
-    return textAnnotations[0].description;
-  }
-
-  /**
-   * Calls the Gemini API to extract structured data from raw text.
-   * @param {string} text The raw text from the OCR process.
-   * @returns {Promise<Object>} The structured data as a JSON object.
-   */
-  async function extractMedicalDataWithGemini(text) {
-    const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
+  async function extractMedicalDataWithGemini(imageBase64Content, mimeType) {
+    const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=${apiKey}`;
 
     const prompt = `
-      You are a highly intelligent medical data extraction assistant.
-      Analyze the following text from a medical lab report.
-      Extract the key information and return it as a valid JSON object.
+      You are a highly intelligent medical data extraction assistant with advanced OCR capabilities.
+      Your task is to analyze the provided image of a medical document, which may contain printed or handwritten text.
 
-      The JSON object should have the following structure:
+      First, perform OCR to transcribe all the text from the image accurately.
+      
+      Second, based on the transcribed text, extract the key information and return a single, valid JSON object.
+
+      The JSON object must have the following structure:
       {
-        "patientInfo": {
-          "name": "The patient's full name. If not present, use null.",
-          "dob": "The patient's date of birth. If not present, use null.",
-          "reportDate": "The date the report was generated. If not present, use null."
-        },
-        "testResults": [
-          {
-            "testName": "The name of the test (e.g., 'Hemoglobin A1c', 'Total Cholesterol').",
-            "value": "The numerical or text result of the test.",
-            "unit": "The unit of measurement (e.g., '%', 'mg/dL'). If not present, use null.",
-            "referenceRange": "The normal or reference range for the test (e.g., '4.0 - 5.6'). If not present, use null."
-          }
-        ]
+        "transcribedText": "The full text transcribed from the document.",
+        "structuredData": {
+          "patientInfo": {
+            "name": "The patient's full name. If not present, use null.",
+            "dob": "The patient's date of birth. If not present, use null.",
+            "reportDate": "The date the report was generated. If not present, use null."
+          },
+          "diagnosis": "The diagnosis mentioned in the report. If not present, use null.",
+          "prescriptions": [
+            {
+              "medication": "The name of the prescribed medication.",
+              "dosage": "The dosage instructions (e.g., '1 tablet twice a day').",
+              "duration": "The duration of the prescription (e.g., 'for 10 days')."
+            }
+          ],
+          "testResults": [
+            {
+              "testName": "The name of the test (e.g., 'Hemoglobin A1c').",
+              "value": "The result of the test.",
+              "unit": "The unit of measurement (e.g., 'mg/dL').",
+              "referenceRange": "The normal reference range."
+            }
+          ]
+        }
       }
 
-      If a value is not found for any field, use null.
-      Do not include any text or explanations outside of the JSON object.
-
-      Here is the text to analyze:
-      ---
-      ${text}
-      ---
+      If a value or section (like prescriptions) is not found, use null or an empty array [].
+      Do not include any text, explanations, or markdown formatting outside of the final JSON object.
     `;
 
     const requestBody = {
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { responseMimeType: "application/json" },
+      contents: [
+        {
+          parts: [
+            { text: prompt },
+            {
+              inline_data: {
+                mime_type: mimeType,
+                data: imageBase64Content,
+              },
+            },
+          ],
+        },
+      ],
+      generationConfig: {
+        response_mime_type: "application/json",
+      },
     };
 
-    const response = await fetch(API_URL, {
+    const response = await fetchWithRetry(API_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(requestBody),
     });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(
-        `Gemini API error: ${errorData.error?.message || "Unknown error"}`
-      );
-    }
 
     const data = await response.json();
     const responseText = data.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -180,13 +157,82 @@ export default function MedicalDocumentExtractorPage() {
     }
 
     try {
-      return JSON.parse(responseText);
+      const parsedJson = JSON.parse(responseText);
+      return {
+        extractedText: parsedJson.transcribedText,
+        extractedData: parsedJson.structuredData,
+      };
     } catch (e) {
       console.error("Failed to parse JSON from Gemini response:", responseText);
       throw new Error(
         "Gemini API did not return valid JSON. See raw text for details."
       );
     }
+  }
+
+  /**
+   * A wrapper around the fetch API that includes a robust retry mechanism with exponential backoff and jitter.
+   * This is useful for handling transient server errors like 503 Service Unavailable or 429 Too Many Requests.
+   * @param {string} url The URL to fetch.
+   * @param {object} options The options for the fetch request.
+   * @param {number} retries The number of retries to attempt.
+   * @returns {Promise<Response>} The fetch response.
+   */
+  async function fetchWithRetry(url, options, retries = 4) {
+    let lastError;
+    for (let i = 0; i < retries; i++) {
+      try {
+        const response = await fetch(url, options);
+
+        // Check for retryable server errors (5xx) or rate limiting (429)
+        if (response.status >= 500 || response.status === 429) {
+          const error = new Error(`API returned status ${response.status}`);
+          error.status = response.status; // Attach status for inspection
+          throw error;
+        }
+
+        // For other non-ok responses (e.g., 400 Bad Request), fail fast
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(
+            `API error: ${errorData.error?.message || "Unknown error"}`
+          );
+        }
+
+        return response; // Success
+      } catch (error) {
+        lastError = error;
+
+        // If the error is not a retryable one, break the loop and throw
+        if (!error.status) {
+          throw lastError;
+        }
+
+        // If this is the last retry, break the loop to throw a custom error
+        if (i === retries - 1) {
+          break;
+        }
+
+        // Wait with exponential backoff and jitter
+        const delay = 2 ** i * 1000 + Math.random() * 1000;
+        console.log(
+          `Attempt ${i + 1} failed with status ${
+            error.status
+          }. Retrying in ${Math.round(delay / 1000)}s...`
+        );
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+
+    // If all retries fail, throw a more user-friendly error for retryable statuses
+    if (lastError.status) {
+      throw new Error(
+        `The AI service is temporarily unavailable (Error ${lastError.status}). Please try again in a few moments.`
+      );
+    }
+
+    // Re-throw any other error that occurred
+    throw lastError;
   }
 
   // The JSX that defines the UI of the component.
@@ -230,10 +276,19 @@ export default function MedicalDocumentExtractorPage() {
                 Google AI Studio.
               </a>
               <br />
+              <br />
               You also need to have the Cloud Vision API enabled in your Google
-              Cloud project. If you haven&apos;t done this, go to the Cloud Vision
-              API page in the Google Cloud Console and click &quot;Enable&quot;. The same
-              project should be associated with your API key. .
+              Cloud project. If you haven't done this, go to the{" "}
+              <a
+                href="https://console.cloud.google.com/apis/library/vision.googleapis.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-indigo-600 hover:underline"
+              >
+                Google AI Studio{" "}
+              </a>
+              page in the Google Cloud Console and click "Enable". The same
+              project should be associated with your API key.
             </p>
           </div>
 
@@ -318,7 +373,7 @@ export default function MedicalDocumentExtractorPage() {
             <div className="flex justify-center items-center">
               <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500 mr-3"></div>
               <p className="text-lg font-medium text-gray-700">
-                {statusMessage}
+                {statusMessage || "Processing..."}
               </p>
             </div>
           </div>
@@ -345,7 +400,7 @@ export default function MedicalDocumentExtractorPage() {
               {/* Raw Text */}
               <div className="bg-white p-4 rounded-xl shadow-lg border border-gray-200">
                 <h3 className="text-lg font-semibold text-gray-800 mb-2">
-                  1. Raw Text (from Vision API)
+                  1. Transcribed Text
                 </h3>
                 <pre className="text-sm bg-gray-100 p-4 rounded-lg overflow-x-auto whitespace-pre-wrap font-mono h-96">
                   {rawText}
@@ -354,7 +409,7 @@ export default function MedicalDocumentExtractorPage() {
               {/* Structured Data */}
               <div className="bg-white p-4 rounded-xl shadow-lg border border-gray-200">
                 <h3 className="text-lg font-semibold text-gray-800 mb-2">
-                  2. Structured Data (from Gemini API)
+                  2. Structured Data
                 </h3>
                 <pre className="text-sm bg-gray-100 p-4 rounded-lg overflow-x-auto whitespace-pre-wrap font-mono h-96">
                   {JSON.stringify(structuredData, null, 2)}
